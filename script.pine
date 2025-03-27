@@ -1,0 +1,476 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// 
+
+//@version=5
+indicator("support_resistance", max_lines_count=500, max_labels_count=500, overlay=true, max_bars_back=1000)
+
+show_current_sr = input.bool(true, title = "Show Current TF S/R", group = "Setting")
+swing_length = input.int(10, title = 'Swing Length', group = 'Setting', minval = 1, maxval = 50)
+history_of_demand_to_keep = input.int(20, title = 'Lookback', minval = 5, maxval = 50, group = "Setting")
+box_width = input.float(5, title = 'S/R Range', group = 'Setting', minval = 1, maxval = 10, step = 0.5)
+
+// Body Type Selection
+pivot_source = input.string("Close", title = "Pivot Source", options = ["Close", "Open"], group = "Setting")
+
+string group3 = "TF Setting"
+enableHtf1 = input.bool(false, group = group3, inline = "htf1", title = "")
+htf1 = input.timeframe("W", "TF1", group = group3, inline = "htf1")
+enableHtf2 = input.bool(false, group = group3, inline = "htf2", title = "")
+htf2 = input.timeframe("D", "TF2", group = group3, inline = "htf2")
+enableHtf3 = input.bool(false, group = group3, inline = "htf3", title = "")
+htf3 = input.timeframe("240", "TF3", group = group3, inline = "htf3")
+enableHtf4 = input.bool(false, group = group3, inline = "htf4", title = "")
+htf4 = input.timeframe("180", "TF4", group = group3, inline = "htf4")
+enableHtf5 = input.bool(false, group = group3, inline = "htf5", title = "")
+htf5 = input.timeframe("120", "TF5", group = group3, inline = "htf5")
+enableHtf6 = input.bool(false, group = group3, inline = "htf6", title = "")
+htf6 = input.timeframe("60", "TF6", group = group3, inline = "htf6")
+enableHtf7 = input.bool(false, group = group3, inline = "htf7", title = "")
+htf7 = input.timeframe("45", "TF7", group = group3, inline = "htf7")
+enableHtf8 = input.bool(false, group = group3, inline = "htf8", title = "")
+htf8 = input.timeframe("30", "TF8", group = group3, inline = "htf8")
+enableHtf9 = input.bool(false, group = group3, inline = "htf9", title = "")
+htf9 = input.timeframe("15", "TF9", group = group3, inline = "htf9")
+
+supply_color = input.color(color.rgb(242, 54, 69, 0.9), title = 'Support Zone', group = 'Color Settings', inline = '3')
+supply_outline_color = input.color(color.rgb(242, 54, 69, 0.9), title = 'BoS', group = 'Color Settings', inline = '3')
+
+demand_color = input.color(color.rgb(41, 98, 255, 0.9), title = 'Resistance Zone', group = 'Color Settings', inline = '4')
+demand_outline_color = input.color(color.rgb(41, 98, 255, 0.9), title = 'BoR', group = 'Color Settings', inline = '4')
+
+// bos_label_color = input.color(color.white, title = 'Fracture Zone', group = 'Color Settings', inline = '5')
+poi_label_color = input.color(color.white, title = 'S/R Zone Label', group = 'Color Settings', inline = '7')
+
+type zone_with_strength
+    box zone
+    int count = 0
+    string tf
+
+//      FUNCTION TO ADD NEW AND REMOVE LAST IN ARRAY
+array_add_pop(array, new_value_to_add) =>
+    array.unshift(array, new_value_to_add)
+    array.pop(array)
+
+// FUNCTION MAKE SURE SUPPLY ISNT OVERLAPPING
+check_overlapping(new_poi, box_array, atr) =>
+    atr_threshold = atr * 2
+    okay_to_draw = true
+    
+    for i = 0 to array.size(box_array) - 1
+        zone_with_strength zws = array.get(box_array, i)
+        if not na(zws)
+            box b = zws.zone
+            top = box.get_top(b)
+            bottom = box.get_bottom(b)
+            poi = (top + bottom) / 2
+
+            upper_boundary = poi + atr_threshold
+            lower_boundary = poi - atr_threshold
+
+            if new_poi >= lower_boundary and new_poi <= upper_boundary
+                okay_to_draw := false
+                break
+            else 
+                okay_to_draw := true
+
+    okay_to_draw
+
+// FUNCTION TO DRAW SUPPLY OR DEMAND ZONE
+support_resistance(value_array, bn_array, box_array, label_array, count_array, box_type, atr, tf_label, tfbarindex, is_htf) =>
+    
+    atr_buffer = atr * (box_width / 10)
+    
+    box_left = is_htf ? bar_index : array.get(bn_array, 0)
+    box_right = bar_index
+
+    var float box_top = 0.00
+    var float box_bottom = 0.00
+    var float poi = 0.00
+
+    if box_type == 1
+        box_bottom := array.get(value_array, 0)
+        box_top := box_bottom + atr_buffer
+        poi := (box_top + box_bottom) / 2
+    else if box_type == -1
+        box_top := array.get(value_array, 0)
+        box_bottom := box_top - atr_buffer
+        poi := (box_top + box_bottom) / 2
+
+    okay_to_draw = check_overlapping(poi, box_array, atr)
+    // okay_to_draw = true
+    //delete oldest box, and then create a new box and add it to the array
+    if box_type == 1 and okay_to_draw
+        zone_with_strength last = array.get(box_array, array.size(box_array) - 1)
+        if not na(last)
+            box.delete(last.zone)
+        box b = box.new(left = box_left, top = box_top, right = bar_index, bottom = box_bottom, border_color = supply_outline_color,
+                     bgcolor = color.new(supply_color, 80), extend = extend.none, text = tf_label, text_halign = text.align_right, text_valign = text.align_center, text_color = poi_label_color, text_size = size.small, xloc = xloc.bar_index)
+        zone_with_strength zws = zone_with_strength.new(b, 0, tf_label)
+        array_add_pop(box_array, zws)
+
+    else if box_type == -1 and okay_to_draw
+        zone_with_strength last = array.get(box_array, array.size(box_array) - 1)
+        if not na(last)
+            box.delete(last.zone)
+        box b = box.new(left = box_left, top = box_top, right = bar_index, bottom = box_bottom, border_color = demand_outline_color,
+                     bgcolor = color.new(demand_color, 80), extend = extend.none,  text = tf_label, text_halign = text.align_right, text_valign = text.align_center, text_color = poi_label_color, text_size = size.small, xloc = xloc.bar_index)
+        zone_with_strength zws = zone_with_strength.new(b, 0, tf_label)
+        array_add_pop(box_array, zws)
+
+//      FUNCTION TO CHANGE SUPPLY/DEMAND TO A BOS IF BROKEN
+sd_to_bos(box_array, bos_array, count_array, label_array, zone_type, tfclose, tfbarindex) =>
+    for i = 0 to array.size(box_array) - 1
+        zone_with_strength zws = array.get(box_array, i)
+        if not na(zws)
+            box b = zws.zone
+            level_to_break_top = box.get_top(b)
+            level_to_break_bottom = box.get_bottom(b)
+            // if ta.crossover(close, level_to_break)
+            if (zone_type == 1 and close >= level_to_break_top) or (zone_type == -1 and close <= level_to_break_bottom)
+                copied_zone = zone_with_strength.copy(zws)
+                box cz = copied_zone.zone
+                mid = (box.get_top(b) + box.get_bottom(b)) / 2
+                line bosline = line.new(box.get_left(cz), mid, bar_index, mid, xloc.bar_index, extend.none, zone_type == 1 ? supply_outline_color : demand_outline_color, line.style_dotted)
+                array_add_pop(bos_array, bosline)
+                // box bos = array.get(bos_array, 0)
+                // box.set_top(bos, mid)
+                // box.set_bottom(bos, mid)
+                // box.set_right(bos, bar_index)
+                // box.set_extend(bos, extend.none)
+                // box.set_text(bos, '')
+                // box.set_text_color( bos, bos_label_color)
+                // box.set_text_size(bos, size.small)
+                // box.set_text_halign(bos, text.align_center)
+                // box.set_text_valign(bos, text.align_center)
+                box.delete(b)
+                array.set(box_array, i, na)
+                // array.remove(box_array, i)
+                // box.delete(array.get(label_array, i))
+
+//      FUNCTION MANAGE CURRENT BOXES BY CHANGING ENDPOINT
+extend_box_endpoint(box_array, count_array, tfbarindex, tfhigh, tflow) =>
+    for i = 0 to array.size(box_array) - 1
+        zone_with_strength zws = array.get(box_array, i)
+        if not na(zws)
+            box b = zws.zone
+            top = box.get_top(b)
+            bottom = box.get_bottom(b)
+            count = zws.count
+            if (high[swing_length - 1] >= bottom and high[swing_length - 1] <= top) or (low[swing_length - 1] >= bottom and low[swing_length - 1] <= top)
+                count := count + 1
+                zws.count := count
+            // count := count + 1
+            // zws.count := count
+            box.set_right(b, bar_index + 40)
+            box.set_text(b, str.format("{0} / {1}", count, zws.tf))
+            zws.zone := b
+            array.set(box_array, i, zws)
+
+//
+//END FUNCTIONS
+//  
+
+//
+// CALCULATIONS FOR SUPPORT AND RESISTANCE
+//
+calculateSR(swing_high_values, swing_low_values, swing_high_bns, swing_low_bns, supply_zone, demand_zone, current_supply_touch_count, current_demand_touch_count, current_supply_poi, current_demand_poi, supply_bos, demand_bos, series1, series2, tf_label, tfbarindex, tfclose, atr, is_htf, swing_high, swing_low, swing_index) =>
+    //      NEW SWING HIGH
+    if not na(swing_high)
+
+        //MANAGE SWING HIGH VALUES
+        array_add_pop(swing_high_values, swing_high)
+        array_add_pop(swing_high_bns, swing_index)
+
+        support_resistance(swing_high_values, swing_high_bns, supply_zone, current_supply_poi, current_supply_touch_count, 1, atr, tf_label, tfbarindex, is_htf)
+
+    //      NEW SWING LOW
+    else if not na(swing_low)
+
+        //MANAGE SWING LOW VALUES
+        array_add_pop(swing_low_values, swing_low)
+        array_add_pop(swing_low_bns, swing_index)
+        
+        support_resistance(swing_low_values, swing_low_bns, demand_zone, current_demand_poi, current_demand_touch_count, -1, atr, tf_label, tfbarindex, is_htf)
+
+
+    sd_to_bos(supply_zone, supply_bos, current_supply_touch_count, current_supply_poi, 1, tfclose, tfbarindex)
+    sd_to_bos(demand_zone, demand_bos, current_demand_touch_count, current_demand_poi, -1, tfclose, tfbarindex)
+
+    extend_box_endpoint(supply_zone, current_supply_touch_count, tfbarindex, series1, series2)
+    extend_box_endpoint(demand_zone, current_demand_touch_count, tfbarindex, series1, series2)
+
+var swing_high_values = array.new_float(5,0.00)
+var swing_low_values = array.new_float(5,0.00)
+
+var swing_high_bns = array.new_int(5,0)
+var swing_low_bns = array.new_int(5,0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE POI LABELS
+var current_supply_poi = array.new_box(history_of_demand_to_keep, na)
+var current_demand_poi = array.new_box(history_of_demand_to_keep, na)
+
+var supply_zones = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+var demand_zones = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+
+var touches_for_supply = array.new_int(history_of_demand_to_keep, 0)
+var touches_for_demand = array.new_int(history_of_demand_to_keep, 0)
+
+//      ARRAYS FOR BOS
+var supply_bos = array.new_line(5, na)
+var demand_bos = array.new_line(5, na)
+
+var swing_high_values1 = array.new_float(5,0.00)
+var swing_low_values1 = array.new_float(5,0.00)
+
+var swing_high_bns1 = array.new_int(5,0)
+var swing_low_bns1 = array.new_int(5,0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE
+var supply_zones1 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+var demand_zones1 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+
+var touches_for_supply1 = array.new_int(history_of_demand_to_keep, 0)
+var touches_for_demand1 = array.new_int(history_of_demand_to_keep, 0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE POI LABELS
+var current_supply_poi1 = array.new_box(history_of_demand_to_keep, na)
+var current_demand_poi1 = array.new_box(history_of_demand_to_keep, na)
+
+//      ARRAYS FOR BOS
+var supply_bos1 = array.new_line(5, na)
+var demand_bos1 = array.new_line(5, na)
+
+var swing_high_values2 = array.new_float(5,0.00)
+var swing_low_values2 = array.new_float(5,0.00)
+
+var swing_high_bns2 = array.new_int(5,0)
+var swing_low_bns2 = array.new_int(5,0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE
+var supply_zones2 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+var demand_zones2 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+
+var touches_for_supply2 = array.new_int(history_of_demand_to_keep, 0)
+var touches_for_demand2 = array.new_int(history_of_demand_to_keep, 0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE POI LABELS
+var current_supply_poi2 = array.new_box(history_of_demand_to_keep, na)
+var current_demand_poi2 = array.new_box(history_of_demand_to_keep, na)
+
+//      ARRAYS FOR BOS
+var supply_bos2 = array.new_line(5, na)
+var demand_bos2 = array.new_line(5, na)
+
+var swing_high_values3 = array.new_float(5,0.00)
+var swing_low_values3 = array.new_float(5,0.00)
+
+var swing_high_bns3 = array.new_int(5,0)
+var swing_low_bns3 = array.new_int(5,0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE
+var supply_zones3 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+var demand_zones3 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+
+var touches_for_supply3 = array.new_int(history_of_demand_to_keep, 0)
+var touches_for_demand3 = array.new_int(history_of_demand_to_keep, 0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE POI LABELS
+var current_supply_poi3 = array.new_box(history_of_demand_to_keep, na)
+var current_demand_poi3 = array.new_box(history_of_demand_to_keep, na)
+
+//      ARRAYS FOR BOS
+var supply_bos3 = array.new_line(5, na)
+var demand_bos3 = array.new_line(5, na)
+
+var swing_high_values4 = array.new_float(5,0.00)
+var swing_low_values4 = array.new_float(5,0.00)
+
+var swing_high_bns4 = array.new_int(5,0)
+var swing_low_bns4 = array.new_int(5,0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE
+var supply_zones4 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+var demand_zones4 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+
+var touches_for_supply4 = array.new_int(history_of_demand_to_keep, 0)
+var touches_for_demand4 = array.new_int(history_of_demand_to_keep, 0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE POI LABELS
+var current_supply_poi4 = array.new_box(history_of_demand_to_keep, na)
+var current_demand_poi4 = array.new_box(history_of_demand_to_keep, na)
+
+//      ARRAYS FOR BOS
+var supply_bos4 = array.new_line(5, na)
+var demand_bos4 = array.new_line(5, na)
+
+var swing_high_values5 = array.new_float(5,0.00)
+var swing_low_values5 = array.new_float(5,0.00)
+
+var swing_high_bns5 = array.new_int(5,0)
+var swing_low_bns5 = array.new_int(5,0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE
+var supply_zones5 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+var demand_zones5 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+
+var touches_for_supply5 = array.new_int(history_of_demand_to_keep, 0)
+var touches_for_demand5 = array.new_int(history_of_demand_to_keep, 0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE POI LABELS
+var current_supply_poi5 = array.new_box(history_of_demand_to_keep, na)
+var current_demand_poi5 = array.new_box(history_of_demand_to_keep, na)
+
+//      ARRAYS FOR BOS
+var supply_bos5 = array.new_line(5, na)
+var demand_bos5 = array.new_line(5, na)
+
+var swing_high_values6 = array.new_float(5,0.00)
+var swing_low_values6 = array.new_float(5,0.00)
+
+var swing_high_bns6 = array.new_int(5,0)
+var swing_low_bns6 = array.new_int(5,0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE
+var supply_zones6 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+var demand_zones6 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+
+var touches_for_supply6 = array.new_int(history_of_demand_to_keep, 0)
+var touches_for_demand6 = array.new_int(history_of_demand_to_keep, 0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE POI LABELS
+var current_supply_poi6 = array.new_box(history_of_demand_to_keep, na)
+var current_demand_poi6 = array.new_box(history_of_demand_to_keep, na)
+
+//      ARRAYS FOR BOS
+var supply_bos6 = array.new_line(5, na)
+var demand_bos6 = array.new_line(5, na)
+
+var swing_high_values7 = array.new_float(5,0.00)
+var swing_low_values7 = array.new_float(5,0.00)
+
+var swing_high_bns7 = array.new_int(5,0)
+var swing_low_bns7 = array.new_int(5,0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE
+var supply_zones7 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+var demand_zones7 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+
+var touches_for_supply7 = array.new_int(history_of_demand_to_keep, 0)
+var touches_for_demand7 = array.new_int(history_of_demand_to_keep, 0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE POI LABELS
+var current_supply_poi7 = array.new_box(history_of_demand_to_keep, na)
+var current_demand_poi7 = array.new_box(history_of_demand_to_keep, na)
+
+//      ARRAYS FOR BOS
+var supply_bos7 = array.new_line(5, na)
+var demand_bos7 = array.new_line(5, na)
+
+var swing_high_values8 = array.new_float(5,0.00)
+var swing_low_values8 = array.new_float(5,0.00)
+
+var swing_high_bns8 = array.new_int(5,0)
+var swing_low_bns8 = array.new_int(5,0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE
+var supply_zones8 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+var demand_zones8 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+
+var touches_for_supply8 = array.new_int(history_of_demand_to_keep, 0)
+var touches_for_demand8 = array.new_int(history_of_demand_to_keep, 0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE POI LABELS
+var current_supply_poi8 = array.new_box(history_of_demand_to_keep, na)
+var current_demand_poi8 = array.new_box(history_of_demand_to_keep, na)
+
+//      ARRAYS FOR BOS
+var supply_bos8 = array.new_line(5, na)
+var demand_bos8 = array.new_line(5, na)
+
+var swing_high_values9 = array.new_float(5,0.00)
+var swing_low_values9 = array.new_float(5,0.00)
+
+var swing_high_bns9 = array.new_int(5,0)
+var swing_low_bns9 = array.new_int(5,0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE
+var supply_zones9 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+var demand_zones9 = array.new<zone_with_strength>(history_of_demand_to_keep, na)
+
+var touches_for_supply9 = array.new_int(history_of_demand_to_keep, 0)
+var touches_for_demand9 = array.new_int(history_of_demand_to_keep, 0)
+
+//      ARRAYS FOR SUPPORT / RESISTANCE POI LABELS
+var current_supply_poi9 = array.new_box(history_of_demand_to_keep, na)
+var current_demand_poi9 = array.new_box(history_of_demand_to_keep, na)
+
+//      ARRAYS FOR BOS
+var supply_bos9 = array.new_line(5, na)
+var demand_bos9 = array.new_line(5, na)
+
+// Select the source based on user input
+body_source = pivot_source == "Close" ? close : open
+
+atr = ta.atr(50)
+if show_current_sr
+    cur_tf_label = timeframe.isintraday ? str.tostring(timeframe.in_seconds() / 60, "#.## MIN") : timeframe.period
+    // Use the body source for pivot detection instead of high/low
+    swing_high = ta.pivothigh(body_source, swing_length, swing_length)
+    swing_low = ta.pivotlow(body_source, swing_length, swing_length)
+    swing_index = bar_index[swing_length]
+    calculateSR(swing_high_values, swing_low_values, swing_high_bns, swing_low_bns, supply_zones, demand_zones, touches_for_supply, touches_for_demand, current_supply_poi, current_demand_poi, supply_bos, demand_bos, high, low, cur_tf_label, bar_index, close, atr, false, swing_high, swing_low, swing_index)
+
+
+// SUPPORT / RESISTANCE FOR HTF1
+[high1, low1, close1, open1, barindex1, atr1, timeframe1, swing_high1, swing_low1, swing_index1] = request.security(syminfo.tickerid, htf1, [high, low, close, open, bar_index, ta.atr(50), timeframe.isintraday ? str.tostring(timeframe.in_seconds() / 60, "#.## MIN") : timeframe.period, ta.pivothigh(pivot_source == "Close" ? close : open, swing_length, swing_length), ta.pivotlow(pivot_source == "Close" ? close : open, swing_length, swing_length), bar_index[swing_length]])
+
+// SUPPORT / RESISTANCE FOR HTF2
+[high2, low2, close2, open2, barindex2, atr2, timeframe2, swing_high2, swing_low2, swing_index2] = request.security(syminfo.tickerid, htf2, [high, low, close, open, bar_index, ta.atr(50), timeframe.isintraday ? str.tostring(timeframe.in_seconds() / 60, "#.## MIN") : timeframe.period, ta.pivothigh(pivot_source == "Close" ? close : open, swing_length, swing_length), ta.pivotlow(pivot_source == "Close" ? close : open, swing_length, swing_length), bar_index[swing_length]])
+
+// SUPPORT / RESISTANCE FOR HTF3
+[high3, low3, close3, open3, barindex3, atr3, timeframe3, swing_high3, swing_low3, swing_index3] = request.security(syminfo.tickerid, htf3, [high, low, close, open, bar_index, ta.atr(50), timeframe.isintraday ? str.tostring(timeframe.in_seconds() / 60, "#.## MIN") : timeframe.period, ta.pivothigh(pivot_source == "Close" ? close : open, swing_length, swing_length), ta.pivotlow(pivot_source == "Close" ? close : open, swing_length, swing_length), bar_index[swing_length]])
+
+// SUPPORT / RESISTANCE FOR HTF4
+[high4, low4, close4, open4, barindex4, atr4, timeframe4, swing_high4, swing_low4, swing_index4] = request.security(syminfo.tickerid, htf4, [high, low, close, open, bar_index, ta.atr(50), timeframe.isintraday ? str.tostring(timeframe.in_seconds() / 60, "#.## MIN") : timeframe.period, ta.pivothigh(pivot_source == "Close" ? close : open, swing_length, swing_length), ta.pivotlow(pivot_source == "Close" ? close : open, swing_length, swing_length), bar_index[swing_length]])
+
+// SUPPORT / RESISTANCE FOR HTF5
+[high5, low5, close5, open5, barindex5, atr5, timeframe5, swing_high5, swing_low5, swing_index5] = request.security(syminfo.tickerid, htf5, [high, low, close, open, bar_index, ta.atr(50), timeframe.isintraday ? str.tostring(timeframe.in_seconds() / 60, "#.## MIN") : timeframe.period, ta.pivothigh(pivot_source == "Close" ? close : open, swing_length, swing_length), ta.pivotlow(pivot_source == "Close" ? close : open, swing_length, swing_length), bar_index[swing_length]])
+
+// SUPPORT / RESISTANCE FOR HTF6
+[high6, low6, close6, open6, barindex6, atr6, timeframe6, swing_high6, swing_low6, swing_index6] = request.security(syminfo.tickerid, htf6, [high, low, close, open, bar_index, ta.atr(50), timeframe.isintraday ? str.tostring(timeframe.in_seconds() / 60, "#.## MIN") : timeframe.period, ta.pivothigh(pivot_source == "Close" ? close : open, swing_length, swing_length), ta.pivotlow(pivot_source == "Close" ? close : open, swing_length, swing_length), bar_index[swing_length]])
+
+// SUPPORT / RESISTANCE FOR HTF7
+[high7, low7, close7, open7, barindex7, atr7, timeframe7, swing_high7, swing_low7, swing_index7] = request.security(syminfo.tickerid, htf7, [high, low, close, open, bar_index, ta.atr(50), timeframe.isintraday ? str.tostring(timeframe.in_seconds() / 60, "#.## MIN") : timeframe.period, ta.pivothigh(pivot_source == "Close" ? close : open, swing_length, swing_length), ta.pivotlow(pivot_source == "Close" ? close : open, swing_length, swing_length), bar_index[swing_length]])
+
+// SUPPORT / RESISTANCE FOR HTF8
+[high8, low8, close8, open8, barindex8, atr8, timeframe8, swing_high8, swing_low8, swing_index8] = request.security(syminfo.tickerid, htf8, [high, low, close, open, bar_index, ta.atr(50), timeframe.isintraday ? str.tostring(timeframe.in_seconds() / 60, "#.## MIN") : timeframe.period, ta.pivothigh(pivot_source == "Close" ? close : open, swing_length, swing_length), ta.pivotlow(pivot_source == "Close" ? close : open, swing_length, swing_length), bar_index[swing_length]])
+
+// SUPPORT / RESISTANCE FOR HTF9
+[high9, low9, close9, open9, barindex9, atr9, timeframe9, swing_high9, swing_low9, swing_index9] = request.security(syminfo.tickerid, htf9, [high, low, close, open, bar_index, ta.atr(50), timeframe.isintraday ? str.tostring(timeframe.in_seconds() / 60, "#.## MIN") : timeframe.period, ta.pivothigh(pivot_source == "Close" ? close : open, swing_length, swing_length), ta.pivotlow(pivot_source == "Close" ? close : open, swing_length, swing_length), bar_index[swing_length]])
+
+if enableHtf1 and htf1 != ""
+    calculateSR(swing_high_values1, swing_low_values1, swing_high_bns1, swing_low_bns1, supply_zones1, demand_zones1, touches_for_supply1, touches_for_demand1, current_supply_poi1, current_demand_poi1, supply_bos1, demand_bos1, high1, low1, timeframe1, barindex1, close1, atr1, true, swing_high1, swing_low1, swing_index1)
+
+if enableHtf2 and htf2 != ""
+    calculateSR(swing_high_values2, swing_low_values2, swing_high_bns2, swing_low_bns2, supply_zones2, demand_zones2, touches_for_supply2, touches_for_demand2, current_supply_poi2, current_demand_poi2, supply_bos2, demand_bos2, high2, low2, timeframe2, barindex2, close2, atr2, true, swing_high2, swing_low2, swing_index2)
+
+if enableHtf3 and htf3 != ""
+    calculateSR(swing_high_values3, swing_low_values3, swing_high_bns3, swing_low_bns3, supply_zones3, demand_zones3, touches_for_supply3, touches_for_demand3, current_supply_poi3, current_demand_poi3, supply_bos3, demand_bos3, high3, low3, timeframe3, barindex3, close3, atr3, true, swing_high3, swing_low3, swing_index3)
+
+if enableHtf4 and htf4 != ""
+    calculateSR(swing_high_values4, swing_low_values4, swing_high_bns4, swing_low_bns4, supply_zones4, demand_zones4, touches_for_supply4, touches_for_demand4, current_supply_poi4, current_demand_poi4, supply_bos4, demand_bos4, high4, low4, timeframe4, barindex4, close4, atr4, true, swing_high4, swing_low4, swing_index4)
+
+if enableHtf5 and htf5 != ""
+    calculateSR(swing_high_values5, swing_low_values5, swing_high_bns5, swing_low_bns5, supply_zones5, demand_zones5, touches_for_supply5, touches_for_demand5, current_supply_poi5, current_demand_poi5, supply_bos5, demand_bos5, high5, low5, timeframe5, barindex5, close5, atr5, true, swing_high5, swing_low5, swing_index5)
+
+if enableHtf6 and htf6 != ""
+    calculateSR(swing_high_values6, swing_low_values6, swing_high_bns6, swing_low_bns6, supply_zones6, demand_zones6, touches_for_supply6, touches_for_demand6, current_supply_poi6, current_demand_poi6, supply_bos6, demand_bos6, high6, low6, timeframe6, barindex6, close6, atr6, true, swing_high6, swing_low6, swing_index6)
+
+if enableHtf7 and htf7 != ""
+    calculateSR(swing_high_values7, swing_low_values7, swing_high_bns7, swing_low_bns7, supply_zones7, demand_zones7, touches_for_supply7, touches_for_demand7, current_supply_poi7, current_demand_poi7, supply_bos7, demand_bos7, high7, low7, timeframe7, barindex7, close7, atr7, true, swing_high7, swing_low7, swing_index7)
+
+if enableHtf8 and htf8 != ""
+    calculateSR(swing_high_values8, swing_low_values8, swing_high_bns8, swing_low_bns8, supply_zones8, demand_zones8, touches_for_supply8, touches_for_demand8, current_supply_poi8, current_demand_poi8, supply_bos8, demand_bos8, high8, low8, timeframe8, barindex8, close8, atr8, true, swing_high8, swing_low8, swing_index8)
+
+if enableHtf9 and htf9 != ""
+    calculateSR(swing_high_values9, swing_low_values9, swing_high_bns9, swing_low_bns9, supply_zones9, demand_zones9, touches_for_supply9, touches_for_demand9, current_supply_poi9, current_demand_poi9, supply_bos9, demand_bos9, high9, low9, timeframe9, barindex9, close9, atr9, true, swing_high9, swing_low9, swing_index9)
